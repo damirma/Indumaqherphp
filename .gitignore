@@ -1,0 +1,17 @@
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Configuración local
+.env
+*.local
+
+# Cachés y logs
+/vendor/
+/node_modules/
+/storage/
+*.log
+
+# Archivos temporales
+*.cache
+*.tmp
