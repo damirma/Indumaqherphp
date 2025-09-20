@@ -340,21 +340,37 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
     const raw = await res.text();
 
     try {
-    // Delegación de eventos: más robusto y evita perder handlers
-    scope.addEventListener('click', (ev) => {
-      const target = ev.target.closest('[data-edit], [data-delete], [data-toggle-status]');
-      if (!target || !scope.contains(target)) return;
-      if (target.hasAttribute('data-edit')) {
-        const id = Number(target.getAt    scope.querySelectorAll('[data-edit]')?.forEach(btn=>{
-      btn.onclick = ()=> openEdit(+btn.getAttribute('data-edit'));
+      const json = raw ? JSON.parse(raw) : {};
+      return { json, raw, response: res };
+    } catch (error) {
+      console.error('Respuesta no válida del servidor', { raw, error });
+      throw new Error('La respuesta del servidor no es JSON válido.');
+    }
+  }
+
+  function bindRowActions(scope){
+    if (!scope) return;
+
+    scope.querySelectorAll('[data-edit]')?.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.getAttribute('data-edit') || '0');
+        if (id > 0) openEdit(id);
+      });
     });
-    scope.querySelectorAll('[data-delete]')?.forEach(btn=>{
-      btn.onclick = ()=> doDelete(+btn.getAttribute('data-delete'));
+
+    scope.querySelectorAll('[data-delete]')?.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.getAttribute('data-delete') || '0');
+        if (id > 0) doDelete(id);
+      });
     });
-    scope.querySelectorAll('[data-toggle-status]')?.forEach(btn=>{
-      btn.onclick = ()=> doToggleStatus(+btn.getAttribute('data-id'), btn.getAttribute('data-to'));
-    });
-;
+
+    scope.querySelectorAll('[data-toggle-status]')?.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.getAttribute('data-id') || '0');
+        const to = btn.getAttribute('data-to') || '';
+        if (id > 0 && to) doToggleStatus(id, to);
+      });
     });
   }
 
