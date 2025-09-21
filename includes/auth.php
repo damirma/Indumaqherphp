@@ -38,13 +38,23 @@ if ($BASE_PATH === '') {
 //
 // ==== CARGA DE CONFIGURACIÓN / BASE DE DATOS ====
 //
-$root   = dirname(__DIR__);
+$rootFs = realpath(dirname(__DIR__));
+if ($rootFs === false) {
+    $rootFs = dirname(__DIR__);
+}
+$rootFs = rtrim($rootFs, "\\/");
+
 $loaded = false;
-foreach ([
-    "$root/config/config.php",
-    "$root/config.php",
-    "$root/config/database.php"
-] as $cfg) {
+$configCandidates = [];
+if ($rootFs !== '') {
+    $configCandidates = [
+        $rootFs . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'config.php',
+        $rootFs . DIRECTORY_SEPARATOR . 'config.php',
+        $rootFs . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'database.php',
+    ];
+}
+
+foreach ($configCandidates as $cfg) {
     if (is_file($cfg)) {
         require_once $cfg;
         $loaded = true;
@@ -111,7 +121,7 @@ class Auth {
             if ($u && (int)($u['is_active'] ?? 1) === 1) {
                 $hash = (string)$u['password'];
                 // Compatibilidad Bcrypt $2b$ → $2y$
-                $pwHash = str_starts_with($hash, '$2b$')
+                $pwHash = strpos($hash, '$2b$') === 0
                     ? '$2y$' . substr($hash, 4)
                     : $hash;
                 $ok = password_verify($password, $pwHash);
