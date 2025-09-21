@@ -197,16 +197,18 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
 </div>
 
 <!-- Modal CRUD -->
-<div id="machine-modal" class="modal hidden" aria-hidden="true">
-  <div class="modal-content">
+<div id="machine-modal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content large" role="document">
     <div class="modal-header">
       <h2 id="mm-title"><i class="fas fa-cogs"></i> Nueva máquina</h2>
-      <button type="button" id="mm-close" class="modal-close"><i class="fas fa-times"></i></button>
+      <button type="button" id="mm-close" class="modal-close" aria-label="Cerrar">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
 
     <form id="machine-form" method="post" enctype="multipart/form-data" action="#">
       <input type="hidden" name="csrf" value="<?= htmlspecialchars($csrf_val, ENT_QUOTES) ?>">
-      <input type="hidden" name="id"   id="mf-id">
+      <input type="hidden" name="id" id="mf-id">
 
       <div class="form-grid two">
         <div class="form-group">
@@ -283,6 +285,8 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
 
 <script>
 (function(){
+  'use strict';
+
   const APP    = '<?= htmlspecialchars($APP_PATH, ENT_QUOTES) ?>';   // /indumaqherphp
   const ADMIN  = '<?= htmlspecialchars($ADMIN_PATH, ENT_QUOTES) ?>'; // /indumaqherphp/admin
   const CSRF   = '<?= htmlspecialchars($csrf_val, ENT_QUOTES) ?>';
@@ -293,7 +297,6 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
   const st       = document.getElementById('machines-status-filter');
   const clearBtn = document.getElementById('machines-clear');
   const newBtn   = document.getElementById('btn-new-machine');
-  const emptyNew = document.getElementById('btn-empty-new');
 
   const MOD      = document.getElementById('machine-modal');
   const MFORM    = document.getElementById('machine-form');
@@ -314,60 +317,124 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
   const FImgUrl  = document.getElementById('mf-image-url');
   const FPreview = document.getElementById('mf-image-preview');
 
-  const toggleModal = (show)=> MOD.classList[show?'remove':'add']('hidden');
-  const toast = (msg)=> console.log(msg);
-  const cleanImage = (value)=> {
-    if (value === null || value === undefined) return NOIMG;
-    const str = String(value).trim();
-    return str ? str : NOIMG;
-  };
-
-  async function fetchJson(url, options = {}){
-    const opts = {...options};
-    const method = (opts.method || 'GET').toUpperCase();
-    let finalUrl = url;
-
-    if (method === 'GET') {
-      finalUrl += (finalUrl.includes('?') ? '&' : '?') + '__json=1';
-    } else if (opts.body instanceof FormData && !opts.body.has('__json')) {
-      opts.body.append('__json', '1');
+  const toast = (() => {
+    const styleId = 'machines-toast-style';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = `
+        .toast-stack{position:fixed;top:1.25rem;right:1.25rem;display:flex;flex-direction:column;gap:.75rem;z-index:12000;pointer-events:none;}
+        .toast-item{min-width:220px;max-width:320px;padding:.85rem 1rem;border-radius:.75rem;background:rgba(15,23,42,0.92);color:#fff;box-shadow:0 20px 40px -22px rgba(15,23,42,0.55);opacity:0;transform:translateY(-10px);transition:opacity .25s ease,transform .25s ease;pointer-events:auto;font-size:.95rem;line-height:1.35;}
+        .toast-item.show{opacity:1;transform:translateY(0);}
+        .toast-item.success{background:#1c7c54;}
+        .toast-item.error{background:#c0392b;}
+      `;
+      document.head.appendChild(style);
     }
 
-    opts.credentials = opts.credentials || 'same-origin';
-    opts.headers = { 'Accept':'application/json', ...(opts.headers || {}) };
+    const container = document.createElement('div');
+    container.className = 'toast-stack';
+    container.setAttribute('aria-live', 'assertive');
+    container.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(container);
 
-    const res = await fetch(finalUrl, opts);
-    const raw = await res.text();
+    return (message, type = 'info') => {
+      if (!message) return;
+      const item = document.createElement('div');
+      item.className = `toast-item ${type}`;
+      item.textContent = message;
+      container.appendChild(item);
+      requestAnimationFrame(() => item.classList.add('show'));
+      setTimeout(() => {
+        item.classList.remove('show');
+        setTimeout(() => item.remove(), 260);
+      }, 3400);
+    };
+  })();
+
+  const cleanImage = (value) => {
+    if (value === null || value === undefined) return NOIMG;
+    const str = String(value).trim();
+    return str || NOIMG;
+  };
+
+  const setModalVisible = (show) => {
+    if (!MOD) return;
+    if (show) {
+      MOD.classList.add('show');
+      MOD.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    } else {
+      MOD.classList.remove('show');
+      MOD.setAttribute('aria-hidden', 'true');
+      document.body.style.removeProperty('overflow');
+    }
+  };
+
+  const resetForm = () => {
+    if (!MFORM) return;
+    MFORM.reset();
+    if (FId) FId.value = '';
+    if (FSort) FSort.value = '0';
+    if (FPreview) FPreview.innerHTML = '';
+  };
+
+  async function fetchJson(url, options = {}) {
+    const opts = { ...options };
+    const method = (opts.method || 'GET').toUpperCase();
+    let requestUrl = url;
+
+    if (method === 'GET') {
+      try {
+        const tmp = new URL(url, window.location.origin);
+        if (!tmp.searchParams.has('__json')) tmp.searchParams.set('__json', '1');
+        requestUrl = tmp.toString();
+      } catch (_) {
+        requestUrl = url + (url.includes('?') ? '&' : '?') + '__json=1';
+      }
+    } else {
+      if (opts.body instanceof FormData) {
+        if (!opts.body.has('__json')) opts.body.append('__json', '1');
+      } else if (opts.body && typeof opts.body === 'object') {
+        const form = new FormData();
+        Object.entries(opts.body).forEach(([key, value]) => {
+          if (Array.isArray(value)) {
+            value.forEach((v) => form.append(key + '[]', v));
+          } else {
+            form.append(key, value);
+          }
+        });
+        form.append('__json', '1');
+        opts.body = form;
+      }
+    }
+
+    opts.method = method;
+    opts.credentials = opts.credentials || 'same-origin';
+    opts.headers = { 'Accept': 'application/json', ...(opts.headers || {}) };
+
+    const response = await fetch(requestUrl, opts);
+    const raw = await response.text();
 
     try {
-    // Delegación de eventos: más robusto y evita perder handlers
-    scope.addEventListener('click', (ev) => {
-      const target = ev.target.closest('[data-edit], [data-delete], [data-toggle-status]');
-      if (!target || !scope.contains(target)) return;
-      if (target.hasAttribute('data-edit')) {
-        const id = Number(target.getAt    scope.querySelectorAll('[data-edit]')?.forEach(btn=>{
-      btn.onclick = ()=> openEdit(+btn.getAttribute('data-edit'));
-    });
-    scope.querySelectorAll('[data-delete]')?.forEach(btn=>{
-      btn.onclick = ()=> doDelete(+btn.getAttribute('data-delete'));
-    });
-    scope.querySelectorAll('[data-toggle-status]')?.forEach(btn=>{
-      btn.onclick = ()=> doToggleStatus(+btn.getAttribute('data-id'), btn.getAttribute('data-to'));
-    });
-;
-    });
+      const data = raw ? JSON.parse(raw) : {};
+      return { response, json: data };
+    } catch (err) {
+      console.error('Respuesta no JSON', raw);
+      throw new Error('El servidor devolvió una respuesta no válida');
+    }
   }
 
-  function render(items){
+  function render(items) {
+    if (!grid) return;
     if (!items || !items.length) {
       grid.innerHTML = `
         <div class="empty-state">
-          <p>No hay Maquinas para mostrar.</p>
+          <p>No hay máquinas para mostrar.</p>
           <button class="btn btn-primary" id="btn-empty-new">
             <i class="fas fa-plus"></i> Crear la primera
           </button>
         </div>`;
-      document.getElementById('btn-empty-new')?.addEventListener('click', openCreate);
       return;
     }
 
@@ -383,7 +450,7 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
       return `
         <article class="machine-card ${status}">
           <div class="thumb">
-            <img src="${img}" alt="${name || 'Maquina'}" loading="lazy">
+            <img src="${img}" alt="${name || 'Máquina'}" loading="lazy">
           </div>
           <div class="body">
             <h3>${name}</h3>
@@ -391,16 +458,16 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
             <p class="desc">${shortDesc}</p>
           </div>
           <div class="meta">
-            <span class="badge ${status==='published'?'success':(status==='draft'?'warning':'neutral')}">
-              ${status==='published'?'Publicado':(status==='draft'?'Borrador':'Archivado')}
+            <span class="badge ${status === 'published' ? 'success' : (status === 'draft' ? 'warning' : 'neutral')}" data-status="${status}">
+              ${status === 'published' ? 'Publicado' : (status === 'draft' ? 'Borrador' : 'Archivado')}
             </span>
-            ${featured ? `<span class="badge info">Destacado</span>` : ''}
+            ${featured ? '<span class="badge info">Destacado</span>' : ''}
           </div>
           <div class="actions">
             <button class="btn btn-secondary" data-edit="${id}">
               <i class="fas fa-pen"></i> Editar
             </button>
-            ${status==='published'
+            ${status === 'published'
               ? `<button class="btn btn-light" data-toggle-status data-id="${id}" data-to="draft"><i class="fas fa-eye-slash"></i> Pasar a borrador</button>`
               : `<button class="btn btn-light" data-toggle-status data-id="${id}" data-to="published"><i class="fas fa-eye"></i> Publicar</button>`
             }
@@ -413,155 +480,242 @@ $PLACEHOLDER = (($APP_PATH !== '') ? $APP_PATH : '') . '/assets/imagenes/img1.pn
     }).join('');
 
     grid.innerHTML = `<div class="cards-grid">${cards}</div>`;
-    bindRowActions(grid);
   }
-  async function load(){
+
+  async function load() {
+    if (!grid) return;
     grid.innerHTML = `
       <div class="loading-state">
         <i class="fas fa-spinner fa-spin"></i>
-        <p>Cargando Maquinas...</p>
+        <p>Cargando máquinas...</p>
       </div>`;
+
     const params = new URLSearchParams();
-    if (s?.value.trim()) params.set('q', s.value.trim());
-    if (st?.value)       params.set('status', st.value);
+    if (s && s.value.trim()) params.set('q', s.value.trim());
+    if (st && st.value) params.set('status', st.value);
 
     try {
-      const {json} = await fetchJson(`${ADMIN}/ajax/machines_list.php?${params.toString()}`);
+      const { json } = await fetchJson(`${ADMIN}/ajax/machines_list.php?${params.toString()}`);
       if (!json.success) {
-        const message = json.error || 'No fue posible cargar las Maquinas.';
-        toast(message);
+        const message = json.error || 'No fue posible cargar las máquinas.';
+        toast(message, 'error');
         grid.innerHTML = `<div class="empty-state"><p>${message}</p></div>`;
         return;
       }
       render(json.data.items || json.data.machines || []);
     } catch (e) {
-      console.error('Error cargando Maquinas', e);
-      const message = e.message || 'Error al cargar las Maquinas.';
+      console.error('Error cargando máquinas', e);
+      const message = e.message || 'Error al cargar las máquinas.';
+      toast(message, 'error');
       grid.innerHTML = `<div class="empty-state"><p>${message}</p></div>`;
-      toast(message);
     }
   }
 
-  function openCreate(){
+  function openCreate() {
+    if (!MFORM) return;
+    resetForm();
     MFORM.action = `${ADMIN}/actions/actions_machines.php?action=create`;
-    MTitle.textContent = 'Nueva Maquina';
-    FId.value = '';
-    FName.value='';
-    FModel.value='';
-    FSlug.value='';
-    FDesc.value='';
-    FShort.value='';
-    FStat.value='draft';
-    FFeat.checked=false;
-    FSort.value='0';
-    FImg.value='';
-    FImgUrl.value='';
-    FPreview.innerHTML='';
-    toggleModal(true);
+    if (MTitle) MTitle.textContent = 'Nueva máquina';
+    if (FStat) FStat.value = 'draft';
+    setModalVisible(true);
   }
 
-  async function openEdit(id){
+  async function openEdit(id) {
     try {
-      const {json: j} = await fetchJson(`${ADMIN}/ajax/machines_get.php?id=${id}`);
-      if (!j.success){ toast(j.error||'Error'); return; }
-      const m = j.data || {};
+      const { json } = await fetchJson(`${ADMIN}/ajax/machines_get.php?id=${id}`);
+      if (!json.success) {
+        toast(json.error || 'No se pudo cargar la máquina', 'error');
+        return;
+      }
+
+      const m = json.data || {};
+      if (MFORM) MFORM.action = `${ADMIN}/actions/actions_machines.php?action=update`;
+      if (MTitle) MTitle.textContent = `Editar máquina #${m.id ?? ''}`;
+      if (FId) FId.value = m.id ?? '';
+      if (FName) FName.value = m.name ?? '';
+      if (FModel) FModel.value = m.model ?? '';
+      if (FSlug) FSlug.value = m.slug ?? '';
+      if (FDesc) FDesc.value = m.description ?? '';
+      if (FShort) FShort.value = m.short_description ?? '';
+      if (FStat) FStat.value = (m.status ?? 'draft') || 'draft';
+      if (FFeat) FFeat.checked = !!m.featured;
+      if (FSort) FSort.value = m.sort_order ?? 0;
       const rawImg = (m.main_image ?? '').toString().trim();
+      if (FImgUrl) FImgUrl.value = rawImg;
+      if (FPreview) {
+        FPreview.innerHTML = rawImg ? `<img src="${rawImg}" alt="" style="max-width:180px;border-radius:.5rem;">` : '';
+      }
+      if (FImg) FImg.value = '';
 
-      MFORM.action   = `${ADMIN}/actions/actions_machines.php?action=update`;
-      MTitle.textContent = `Editar Maquina #${m.id||''}`;
-      FId.value   = m.id||'';
-      FName.value = m.name||'';
-      FModel.value= m.model||'';
-      FSlug.value = m.slug||'';
-      FDesc.value = m.description||'';
-      FShort.value= m.short_description||'';
-      FStat.value = (m.status ?? 'draft') || 'draft';
-      FFeat.checked = !!m.featured;
-      FSort.value  = (m.sort_order ?? 0);
-      FImgUrl.value= rawImg;
-      FPreview.innerHTML = rawImg ? `<img src="${rawImg}" alt="" style="max-width:180px;border-radius:.5rem;">` : '';
-      FImg.value = '';
-      toggleModal(true);
+      setModalVisible(true);
     } catch (e) {
-      console.error('Error abriendo Maquina', e);
-      toast(e.message || 'No se pudo cargar la Maquina');
+      console.error('Error abriendo máquina', e);
+      toast(e.message || 'No se pudo cargar la máquina', 'error');
     }
   }
-  // Guardado
-  MFORM.addEventListener('submit', async (ev)=>{
-    ev.preventDefault();
-    const fd  = new FormData(MFORM);
-    try {
-      const {json: j} = await fetchJson(MFORM.action, { method:'POST', body: fd });
-      if (j.success){ toggleModal(false); toast(j.message||'Guardado'); load(); }
-      else { toast(j.error||'Error al guardar'); }
-    } catch (e) {
-      toast(e.message || 'Error inesperado');
-    }
-  });
 
-  // Upload de imagen (opcional)
-  FImg?.addEventListener('change', async (ev)=>{
-    const file = ev.target.files?.[0]; if(!file) return;
+  async function submitForm(ev) {
+    ev.preventDefault();
+    if (!MFORM) return;
+
+    const formData = new FormData(MFORM);
+    try {
+      const { json } = await fetchJson(MFORM.action, { method: 'POST', body: formData });
+      if (json.success) {
+        toast(json.message || 'Cambios guardados', 'success');
+        setModalVisible(false);
+        load();
+      } else {
+        toast(json.error || 'Error al guardar', 'error');
+      }
+    } catch (e) {
+      toast(e.message || 'Error inesperado al guardar', 'error');
+    }
+  }
+
+  async function doDelete(id) {
+    if (!confirm('¿Eliminar esta máquina de forma permanente?')) return;
+    const fd = new FormData();
+    fd.append('csrf', CSRF);
+    fd.append('id', String(id));
+    try {
+      const { json } = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=delete`, { method: 'POST', body: fd });
+      if (json.success) {
+        toast('Máquina eliminada', 'success');
+        load();
+      } else {
+        toast(json.error || 'No se pudo eliminar', 'error');
+      }
+    } catch (e) {
+      toast(e.message || 'Error eliminando la máquina', 'error');
+    }
+  }
+
+  async function doToggleStatus(id, to) {
+    const fd = new FormData();
+    fd.append('csrf', CSRF);
+    fd.append('id', String(id));
+    fd.append('to', String(to));
+    try {
+      const { json } = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=toggle_status`, { method: 'POST', body: fd });
+      if (json.success) {
+        toast('Estado actualizado', 'success');
+        load();
+      } else {
+        toast(json.error || 'No se pudo cambiar el estado', 'error');
+      }
+    } catch (e) {
+      toast(e.message || 'Error al cambiar estado', 'error');
+    }
+  }
+
+  function handleGridClick(ev) {
+    const editBtn = ev.target.closest('[data-edit]');
+    if (editBtn) {
+      ev.preventDefault();
+      const id = Number(editBtn.getAttribute('data-edit')) || 0;
+      if (id > 0) openEdit(id);
+      return;
+    }
+
+    const deleteBtn = ev.target.closest('[data-delete]');
+    if (deleteBtn) {
+      ev.preventDefault();
+      const id = Number(deleteBtn.getAttribute('data-delete')) || 0;
+      if (id > 0) doDelete(id);
+      return;
+    }
+
+    const toggleBtn = ev.target.closest('[data-toggle-status]');
+    if (toggleBtn) {
+      ev.preventDefault();
+      const id = Number(toggleBtn.getAttribute('data-id')) || 0;
+      const to = toggleBtn.getAttribute('data-to') || '';
+      if (id > 0 && to) doToggleStatus(id, to);
+      return;
+    }
+
+    const createBtn = ev.target.closest('#btn-empty-new');
+    if (createBtn) {
+      ev.preventDefault();
+      openCreate();
+    }
+  }
+
+  function closeOnBackdrop(ev) {
+    if (ev.target === MOD) {
+      setModalVisible(false);
+    }
+  }
+
+  function handleKey(ev) {
+    if (ev.key === 'Escape' && MOD?.classList.contains('show')) {
+      setModalVisible(false);
+    }
+  }
+
+  function updateImagePreview() {
+    if (!FPreview) return;
+    const url = (FImgUrl?.value || '').trim();
+    FPreview.innerHTML = url ? `<img src="${url}" alt="" style="max-width:180px;border-radius:.5rem;">` : '';
+  }
+
+  async function uploadImage(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
     const fd = new FormData();
     fd.append('csrf', CSRF);
     fd.append('image', file);
     try {
-      const {json: j} = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=upload`, { method:'POST', body: fd });
-      if (j.success){
-        FImgUrl.value = j.url;
-        FPreview.innerHTML = `<img src="${j.url}" alt="" style="max-width:180px;border-radius:.5rem;">`;
-        toast('Imagen subida');
-      } else { toast(j.error || 'Error subiendo imagen'); }
+      const { json } = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=upload`, { method: 'POST', body: fd });
+      if (json.success && json.url) {
+        if (FImgUrl) FImgUrl.value = json.url;
+        updateImagePreview();
+        toast('Imagen subida correctamente', 'success');
+      } else {
+        toast(json.error || 'No se pudo subir la imagen', 'error');
+      }
     } catch (e) {
-      toast(e.message || 'Error subiendo imagen');
-    }
-  });
-
-  // Eliminar
-  async function doDelete(id){
-    if (!confirm('¿Eliminar esta máquina de forma permanente?')) return;
-    const fd = new FormData();
-    fd.append('csrf', CSRF); fd.append('id', String(id));
-    try {
-      const {json: j} = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=delete`, { method:'POST', body: fd });
-      if (j.success){ toast('Eliminada'); load(); } else { toast(j.error||'Error'); }
-    } catch (e) {
-      toast(e.message || 'Error eliminando');
+      toast(e.message || 'Error al subir la imagen', 'error');
+    } finally {
+      ev.target.value = '';
     }
   }
 
-  // Toggle estado
-  async function doToggleStatus(id, to){
-    const fd = new FormData();
-    fd.append('csrf', CSRF); fd.append('id', String(id)); fd.append('to', String(to));
-    try {
-      const {json: j} = await fetchJson(`${ADMIN}/actions/actions_machines.php?action=toggle_status`, { method:'POST', body: fd });
-      if (j.success){ toast('Estado actualizado'); load(); } else { toast(j.error||'Error'); }
-    } catch (e) {
-      toast(e.message || 'Error actualizando estado');
-    }
+  if (grid) grid.addEventListener('click', handleGridClick);
+  if (s) {
+    let t;
+    s.addEventListener('input', () => {
+      clearTimeout(t);
+      t = setTimeout(load, 350);
+    });
   }
-
-  // Filtros
-  let t;
-  s?.addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 300); });
   st?.addEventListener('change', load);
   clearBtn?.addEventListener('click', () => {
     if (s) s.value = '';
     if (st) st.value = '';
     load();
   });
-  // Nueva
-  newBtn?.addEventListener('click', openCreate);
-  emptyNew?.addEventListener('click', openCreate);
+  newBtn?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    openCreate();
+  });
+  MCancel?.addEventListener('click', () => setModalVisible(false));
+  MClose?.addEventListener('click', () => setModalVisible(false));
+  MOD?.addEventListener('click', closeOnBackdrop);
+  document.addEventListener('keydown', handleKey);
+  MFORM?.addEventListener('submit', submitForm);
+  FImg?.addEventListener('change', uploadImage);
+  FImgUrl?.addEventListener('input', updateImagePreview);
 
-  // Modal close
-  MCancel?.addEventListener('click', ()=> toggleModal(false));
-  MClose?.addEventListener('click',  ()=> toggleModal(false));
+  updateImagePreview();
 
-  // Enlazar acciones para el HTML SSR inicial
-  bindRowActions(grid);
+  document.getElementById('btn-empty-new')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    openCreate();
+  });
+
+  load();
 })();
 </script>
 
