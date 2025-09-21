@@ -11,28 +11,10 @@ declare(strict_types=1);
 //
 // ==== BASE_PATH dinámico (p.ej. "/indumaqherphp") ====
 //
-$projectRootFs = str_replace('\\', '/', dirname(__DIR__));
-$docRootFs     = rtrim(str_replace('\\', '/', $_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
-$BASE_PATH     = '';
-
-// Intentar derivar la ruta relativa del proyecto respecto al DOCUMENT_ROOT
-if ($docRootFs !== '' && strpos($projectRootFs, $docRootFs) === 0) {
-    $relative = substr($projectRootFs, strlen($docRootFs));
-    $relative = '/' . ltrim($relative, '/');
-    $BASE_PATH = ($relative === '/' || $relative === '') ? '' : $relative;
-}
-
-// Fallback: deducir tomando el primer segmento del SCRIPT_NAME si coincide con el nombre del proyecto
-if ($BASE_PATH === '') {
-    $scriptDir = trim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
-    if ($scriptDir !== '' && $scriptDir !== '.') {
-        $segments        = explode('/', $scriptDir);
-        $projectDirName  = strtolower(basename($projectRootFs));
-        $firstSegment    = strtolower($segments[0] ?? '');
-        if ($firstSegment !== '' && $firstSegment === $projectDirName) {
-            $BASE_PATH = '/' . $segments[0];
-        }
-    }
+$scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
+$BASE_PATH = rtrim(str_replace('\\', '/', dirname($scriptDir)), '/');
+if ($BASE_PATH === '' || $BASE_PATH === '.') {
+    $BASE_PATH = '';
 }
 
 //
